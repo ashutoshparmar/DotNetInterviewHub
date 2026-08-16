@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="navy">#0B2545</color>
+    <color name="blue">#2E74B5</color>
+    <color name="surface">#F5F7FA</color>
+    <color name="ink">#1C2530</color>
+    <color name="muted">#5A626C</color>
+    <color name="white">#FFFFFF</color>
+</resources>
