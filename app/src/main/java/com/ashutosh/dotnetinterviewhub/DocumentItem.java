@@ -9,6 +9,12 @@ public class DocumentItem {
     public long updatedAt;
     public boolean seeded;
     public boolean bookmarked;
+    public long workspaceId;
+    public String workspaceName;
+    public String folderName;
+    public String tags;
+    public long lastOpenedAt;
+    public int readingProgress;
 
     public DocumentItem() {}
 

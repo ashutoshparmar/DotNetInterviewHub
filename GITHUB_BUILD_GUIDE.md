@@ -44,6 +44,10 @@ The debug APK is suitable for personal installation and testing. It is not the s
 
 Every new commit to `main` or `master` automatically creates a fresh APK. You can also open **Actions → Build Android APK → Run workflow** to start a build manually.
 
+For the Version 2 update, upload and replace the complete project contents from the new ZIP. Keep the repository structure unchanged. When the workflow succeeds, install the new APK over version 1.1; do not uninstall the old app. The bundled personal signing key and higher version code allow Android to preserve and migrate the existing local database.
+
+Before any future uninstall or phone change, open **Manage → Export backup** in the app and keep the generated JSON file safely.
+
 ## If the Actions tab shows no workflow
 
 Check that the workflow exists at this exact repository path:

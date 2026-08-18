@@ -1,12 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@drawable/ic_launcher"
-        android:label=".NET Interview Hub"
+        android:label="Knowledge Hub"
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+        <activity android:name=".LibraryActivity" android:exported="false" />
+        <activity android:name=".VersionHistoryActivity" android:exported="false" />
         <activity android:name=".EditorActivity" android:exported="false" />
         <activity android:name=".DetailActivity" android:exported="false" />
         <activity

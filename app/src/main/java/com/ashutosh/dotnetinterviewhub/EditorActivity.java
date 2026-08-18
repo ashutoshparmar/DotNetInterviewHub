@@ -9,6 +9,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -18,7 +20,11 @@ public class EditorActivity extends Activity {
     private DocumentItem item;
     private EditText title;
     private EditText category;
+    private EditText folder;
+    private EditText tags;
     private EditText content;
+    private Spinner workspace;
+    private java.util.List<WorkspaceItem> workspaces;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -34,7 +40,7 @@ public class EditorActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Ui.SURFACE);
-        root.addView(Ui.header(this, "Edit interview topic", "Changes are stored offline on this device"));
+        root.addView(Ui.header(this, "Edit knowledge document", "Changes create a recoverable version automatically"));
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout form = new LinearLayout(this);
@@ -43,8 +49,19 @@ public class EditorActivity extends Activity {
 
         title = input("Title", item.title, false);
         form.addView(field("Document title", title));
+        workspaces = repository.workspaces(false);
+        workspace = new Spinner(this);
+        workspace.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, workspaces));
+        for (int i = 0; i < workspaces.size(); i++) if (workspaces.get(i).id == item.workspaceId) workspace.setSelection(i);
+        form.addView(field("Workspace", workspace));
         category = input("Category", item.category, false);
         form.addView(field("Category", category));
+        folder = input("Example: Architecture and ADRs", item.folderName, false);
+        form.addView(field("Folder", folder));
+        tags = input("Example: .net, angular, api", item.tags, false);
+        LinearLayout tagsField = field("Tags (separate with commas)", tags);
+        tagsField.addView(help("Tags help you find related documents across folders."));
+        form.addView(tagsField);
         content = input("Interview content", item.content, true);
         LinearLayout contentField = field("Content", content);
         contentField.addView(help("Formatting: start a heading with #, ## or ###. Imported DOCX headings are converted automatically."));
@@ -111,15 +128,18 @@ public class EditorActivity extends Activity {
     private void save() {
         String newTitle = title.getText().toString().trim();
         String newCategory = category.getText().toString().trim();
+        String newFolder = folder.getText().toString().trim();
+        String newTags = tags.getText().toString().trim();
         String newContent = content.getText().toString().trim();
         if (newTitle.isEmpty() || newContent.isEmpty()) {
             Toast.makeText(this, "Title and content are required.", Toast.LENGTH_LONG).show();
             return;
         }
+        WorkspaceItem selectedWorkspace = (WorkspaceItem) workspace.getSelectedItem();
         repository.update(documentId, newTitle,
                 newCategory.isEmpty() ? "Imported" : newCategory,
-                newContent, item.sourceName);
-        Toast.makeText(this, "Changes saved", Toast.LENGTH_SHORT).show();
+                newContent, item.sourceName, selectedWorkspace.id, newFolder, newTags);
+        Toast.makeText(this, "Changes saved. Previous version retained.", Toast.LENGTH_SHORT).show();
         finish();
     }
 }

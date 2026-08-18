@@ -51,9 +51,11 @@ public class DocumentAdapter extends BaseAdapter {
         card.addView(title);
 
         TextView metadata = new TextView(context);
-        String origin = item.seeded ? "Original interview guide" : "Imported document";
+        String origin = item.seeded ? "Original guide" : "Personal document";
         String date = DateFormat.getDateInstance(DateFormat.MEDIUM).format(new Date(item.updatedAt));
-        metadata.setText(item.category + "  •  " + origin + "  •  " + date);
+        String folder = item.folderName == null || item.folderName.isEmpty() ? item.category : item.folderName;
+        metadata.setText(item.workspaceName + "  •  " + folder + "\n" + origin + "  •  " + date +
+                (item.readingProgress > 0 ? "  •  " + item.readingProgress + "% read" : ""));
         metadata.setTextColor(Ui.MUTED);
         metadata.setTextSize(12);
         metadata.setPadding(0, Ui.dp(context, 6), 0, 0);
