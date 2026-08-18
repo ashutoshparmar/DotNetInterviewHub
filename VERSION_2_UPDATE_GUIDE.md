@@ -33,7 +33,7 @@ If the browser does not reliably replace the existing files, delete only the rep
 4. Open the app and verify that the existing documents and bookmarks remain.
 5. Open **Manage → Export backup** and save the first Version 2 backup.
 
-If Android says the package conflicts or cannot be installed, stop and do not uninstall the old app. Confirm that `app/personal-debug.keystore`, application ID `com.ashutosh.dotnetinterviewhub`, and version code `3` are present in the uploaded project.
+If Android says the package conflicts or cannot be installed, stop and do not uninstall the old app. Confirm that `app/personal-debug.keystore`, application ID `com.ashutosh.dotnetinterviewhub`, and version code `4` are present in the uploaded project.
 
 ## 5. Suggested ChangeGuard document fields
 

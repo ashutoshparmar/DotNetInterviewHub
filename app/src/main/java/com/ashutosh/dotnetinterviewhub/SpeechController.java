@@ -18,11 +18,15 @@ public final class SpeechController {
 
     private final Listener listener;
     private TextToSpeech engine;
-    private boolean ready;
-    private boolean speaking;
-    private boolean paused;
+    private volatile boolean ready;
+    private volatile boolean speaking;
+    private volatile boolean paused;
     private int session;
-    private int current;
+    private volatile int current;
+    private volatile int resumeOffset;
+    private int utteranceBaseOffset;
+    private int utteranceSequence;
+    private volatile String activeUtteranceId = "";
     private float rate;
     private final List<String> chunks = new ArrayList<>();
 
@@ -48,12 +52,19 @@ public final class SpeechController {
             }
             @Override public void onDone(String id) {
                 if (!isCurrent(id) || paused || !speaking) return;
+                resumeOffset = 0;
                 current++;
                 if (current < chunks.size()) speakCurrent();
                 else { speaking = false; paused = false; notifyState("Finished reading this document."); }
             }
             @Override public void onError(String id) {
-                if (isCurrent(id)) { speaking = false; paused = false; notifyState("Reading stopped because the speech service reported an error."); }
+                // Some speech engines report a stopped utterance as an error. A user pause is not an error.
+                if (isCurrent(id) && !paused) {
+                    speaking = false; notifyState("Reading stopped because the speech service reported an error.");
+                }
+            }
+            @Override public void onRangeStart(String id, int start, int end, int frame) {
+                if (isCurrent(id)) resumeOffset = Math.max(0, utteranceBaseOffset + start);
             }
         });
         ready = true; listener.onReady(true); notifyState("Ready to read this document aloud.");
@@ -62,7 +73,7 @@ public final class SpeechController {
     public void playOrResume(String content) {
         if (!ready) { notifyState("The phone's text-to-speech service is not ready."); return; }
         if (paused && !chunks.isEmpty()) { paused = false; speaking = true; speakCurrent(); return; }
-        stop(true); chunks.addAll(split(clean(content))); current = 0;
+        stop(true); chunks.addAll(split(clean(content))); current = 0; resumeOffset = 0;
         if (chunks.isEmpty()) { notifyState("There is no readable content in this document."); return; }
         speaking = true; speakCurrent();
     }
@@ -70,11 +81,12 @@ public final class SpeechController {
     public void pause() {
         if (!speaking || engine == null) return;
         paused = true; speaking = false; engine.stop();
-        notifyState("Paused at section " + (current + 1) + " of " + chunks.size() + ".");
+        notifyState("Paused. Resume will continue from this position.");
     }
 
     public void stop(boolean silent) {
-        session++; speaking = false; paused = false; current = 0; chunks.clear();
+        session++; speaking = false; paused = false; current = 0; resumeOffset = 0;
+        activeUtteranceId = ""; chunks.clear();
         if (engine != null) engine.stop(); if (!silent) notifyState("Reading stopped.");
     }
 
@@ -93,14 +105,23 @@ public final class SpeechController {
 
     private void speakCurrent() {
         if (!ready || engine == null || current >= chunks.size()) return;
+        String fullChunk = chunks.get(current);
+        if (resumeOffset >= fullChunk.length()) {
+            resumeOffset = 0; current++;
+            if (current < chunks.size()) speakCurrent();
+            else { speaking = false; paused = false; notifyState("Finished reading this document."); }
+            return;
+        }
         speaking = true; paused = false;
-        String id = "knowledge-" + session + "-section-" + current;
-        int result = engine.speak(chunks.get(current), TextToSpeech.QUEUE_FLUSH, new Bundle(), id);
+        utteranceBaseOffset = resumeOffset;
+        activeUtteranceId = "knowledge-" + session + "-section-" + current + "-take-" + (++utteranceSequence);
+        int result = engine.speak(fullChunk.substring(resumeOffset), TextToSpeech.QUEUE_FLUSH,
+                new Bundle(), activeUtteranceId);
         if (result == TextToSpeech.ERROR) { speaking = false; notifyState("The phone could not start reading this section."); }
         else notifyState("Reading section " + (current + 1) + " of " + chunks.size());
     }
 
-    private boolean isCurrent(String id) { return id != null && id.startsWith("knowledge-" + session + "-"); }
+    private boolean isCurrent(String id) { return id != null && id.equals(activeUtteranceId); }
     private void notifyState(String status) { listener.onState(status, speaking, paused); }
 
     private static String clean(String content) {
@@ -109,15 +130,19 @@ public final class SpeechController {
     }
 
     private static List<String> split(String text) {
-        int limit = Math.min(3500, TextToSpeech.getMaxSpeechInputLength() - 200);
+        // Short chunks provide a close fallback on Android 7, where word-range callbacks are unavailable.
+        int limit = Math.min(500, TextToSpeech.getMaxSpeechInputLength() - 200);
         List<String> result = new ArrayList<>(); StringBuilder current = new StringBuilder();
         for (String paragraph : text.split("\\n\\s*\\n")) {
-            String remaining = paragraph.trim();
-            while (remaining.length() > limit) {
-                int at = remaining.lastIndexOf(' ', limit); if (at < limit / 2) at = limit;
-                append(result, current, remaining.substring(0, at), limit); remaining = remaining.substring(at).trim();
+            for (String sentence : paragraph.trim().split("(?<=[.!?])\\s+")) {
+                String remaining = sentence.trim();
+                while (remaining.length() > limit) {
+                    int at = remaining.lastIndexOf(' ', limit); if (at < limit / 2) at = limit;
+                    append(result, current, remaining.substring(0, at), limit); remaining = remaining.substring(at).trim();
+                }
+                if (!remaining.isEmpty()) append(result, current, remaining, limit);
             }
-            if (!remaining.isEmpty()) append(result, current, remaining, limit);
+            if (current.length() > 0) { result.add(current.toString()); current.setLength(0); }
         }
         if (current.length() > 0) result.add(current.toString()); return result;
     }

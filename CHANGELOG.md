@@ -1,5 +1,12 @@
 # Change log
 
+## 2.0.1 — Audio pause/resume correction
+
+- Fixed **Resume** restarting from the beginning of a large speech section.
+- Tracks the exact spoken character range on Android 8.0 and newer.
+- Uses short sentence-based speech sections as a close fallback on Android 7.
+- Prevents a speech engine's stop callback from being treated as a playback error during pause.
+
 ## 2.0.0 — Knowledge Hub foundation
 
 - Expanded the app from interview revision into a multi-workspace personal Knowledge Hub.
