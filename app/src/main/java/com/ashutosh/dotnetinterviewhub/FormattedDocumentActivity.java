@@ -16,11 +16,13 @@ import android.widget.LinearLayout;
 /** Displays the format-preserving HTML generated locally from an imported DOCX. */
 public class FormattedDocumentActivity extends Activity {
     private WebView webView;
+    private DocumentRepository repository;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         long documentId = getIntent().getLongExtra("document_id", -1);
-        DocumentItem item = new DocumentRepository(this).get(documentId);
+        repository = new DocumentRepository(this);
+        DocumentItem item = repository.get(documentId);
         if (item == null || item.renderedHtml == null || item.renderedHtml.isEmpty()) {
             finish();
             return;
@@ -31,12 +33,16 @@ public class FormattedDocumentActivity extends Activity {
         root.setBackgroundColor(Color.WHITE);
         root.addView(Ui.header(this, item.title, "Formatted DOCX view • Pinch to zoom"));
 
-        Button back = Ui.button(this, "← Back to text and audio", false);
-        back.setOnClickListener(v -> finish());
-        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 50));
-        backParams.setMargins(Ui.dp(this, 10), Ui.dp(this, 6), Ui.dp(this, 10), Ui.dp(this, 4));
-        root.addView(back, backParams);
+        LinearLayout modes = new LinearLayout(this);
+        modes.setOrientation(LinearLayout.HORIZONTAL);
+        modes.setPadding(Ui.dp(this, 6), Ui.dp(this, 4), Ui.dp(this, 6), Ui.dp(this, 2));
+        Button formatted = Ui.button(this, "Formatted", true); formatted.setEnabled(false);
+        modes.addView(formatted, Ui.weightedButtonParams(this));
+        Button text = Ui.button(this, "Text", false); text.setOnClickListener(v -> finishWithMode("text"));
+        modes.addView(text, Ui.weightedButtonParams(this));
+        Button audio = Ui.button(this, "Audio", false); audio.setOnClickListener(v -> finishWithMode("audio"));
+        modes.addView(audio, Ui.weightedButtonParams(this));
+        root.addView(modes);
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.WHITE);
@@ -44,6 +50,10 @@ public class FormattedDocumentActivity extends Activity {
         settings.setJavaScriptEnabled(false);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
+        settings.setBlockNetworkLoads(true);
+        settings.setDomStorageEnabled(false);
+        settings.setDatabaseEnabled(false);
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
         settings.setLoadWithOverviewMode(true);
@@ -58,11 +68,18 @@ public class FormattedDocumentActivity extends Activity {
                 return openExternal(Uri.parse(url));
             }
         });
-        webView.loadDataWithBaseURL("https://knowledgehub.local/", item.renderedHtml,
+        webView.loadDataWithBaseURL(null, item.renderedHtml,
                 "text/html", "UTF-8", null);
         root.addView(webView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
+    }
+
+    private void finishWithMode(String mode) {
+        Intent result = new Intent();
+        result.putExtra("focus_mode", mode);
+        setResult(RESULT_OK, result);
+        finish();
     }
 
     private boolean openExternal(Uri uri) {
@@ -80,6 +97,7 @@ public class FormattedDocumentActivity extends Activity {
             webView.loadUrl("about:blank");
             webView.destroy();
         }
+        if (repository != null) repository.close();
         super.onDestroy();
     }
 }

@@ -2,6 +2,7 @@ package com.ashutosh.dotnetinterviewhub;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
@@ -19,9 +20,12 @@ import android.widget.Toast;
 import java.text.DateFormat;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class DetailActivity extends Activity implements SpeechController.Listener {
     private static final int REQUEST_REPLACE = 2001;
+    private static final int REQUEST_FORMATTED = 2002;
     private DocumentRepository repository;
     private long documentId;
     private DocumentItem item;
@@ -35,6 +39,12 @@ public class DetailActivity extends Activity implements SpeechController.Listene
     private boolean speechSpeaking;
     private boolean speechPaused;
     private boolean hasResumedOnce;
+    private View audioPanelView;
+    private View textBodyView;
+    private String pendingFocusMode;
+    private final ExecutorService importExecutor = Executors.newSingleThreadExecutor();
+    private ProgressDialog importProgress;
+    private volatile boolean destroyed;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state); documentId = getIntent().getLongExtra("document_id", -1);
@@ -72,18 +82,12 @@ public class DetailActivity extends Activity implements SpeechController.Listene
         metadata.setPadding(Ui.dp(this, 12), Ui.dp(this, 10), Ui.dp(this, 12), Ui.dp(this, 10)); metadata.setBackground(Ui.cardBackground(this));
         content.addView(metadata, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        content.addView(buildAudioPanel());
-        if (item.renderedHtml != null && !item.renderedHtml.isEmpty()) {
-            Button formatted = Ui.button(this, "▣ Open formatted DOCX view", true);
-            formatted.setOnClickListener(v -> openFormattedDocument());
-            LinearLayout.LayoutParams formattedParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52));
-            formattedParams.setMargins(0, Ui.dp(this, 12), 0, 0);
-            content.addView(formatted, formattedParams);
-        }
+        content.addView(buildViewModes());
+        audioPanelView = buildAudioPanel();
+        content.addView(audioPanelView);
         TextView body = new TextView(this); body.setText(ContentFormatter.format(item.content)); body.setTextColor(Ui.INK);
         body.setTextSize(16); body.setLineSpacing(Ui.dp(this, 4), 1.12f); body.setTextIsSelectable(true);
-        body.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 12)); content.addView(body);
+        body.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 12)); textBodyView = body; content.addView(body);
         content.addView(buildMaintenancePanel());
 
         scroll.addView(content); root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
@@ -93,6 +97,29 @@ public class DetailActivity extends Activity implements SpeechController.Listene
             int range = Math.max(0, scroll.getChildAt(0).getHeight() - scroll.getHeight());
             scroll.scrollTo(0, range * item.readingProgress / 100);
         });
+    }
+
+    private View buildViewModes() {
+        LinearLayout modes = row();
+        boolean hasFormatted = item.renderedHtml != null && !item.renderedHtml.isEmpty();
+        Button formatted = Ui.button(this, "Formatted", hasFormatted);
+        formatted.setEnabled(hasFormatted);
+        if (!hasFormatted) formatted.setContentDescription("Formatted view is available after importing a DOCX file");
+        formatted.setOnClickListener(v -> openFormattedDocument());
+        modes.addView(formatted, Ui.weightedButtonParams(this));
+        Button text = Ui.button(this, "Text", false);
+        text.setOnClickListener(v -> focusMode("text"));
+        modes.addView(text, Ui.weightedButtonParams(this));
+        Button audio = Ui.button(this, "Audio", false);
+        audio.setOnClickListener(v -> focusMode("audio"));
+        modes.addView(audio, Ui.weightedButtonParams(this));
+        return modes;
+    }
+
+    private void focusMode(String mode) {
+        View target = "audio".equals(mode) ? audioPanelView : textBodyView;
+        if (scroll == null || target == null) return;
+        scroll.post(() -> scroll.smoothScrollTo(0, Math.max(0, target.getTop() - Ui.dp(this, 8))));
     }
 
     private LinearLayout row() {
@@ -165,7 +192,7 @@ public class DetailActivity extends Activity implements SpeechController.Listene
     }
     private void openFormattedDocument() {
         speech.stop(true); Intent intent = new Intent(this, FormattedDocumentActivity.class);
-        intent.putExtra("document_id", documentId); startActivity(intent);
+        intent.putExtra("document_id", documentId); startActivityForResult(intent, REQUEST_FORMATTED);
     }
     private void chooseReplacement() {
         speech.stop(true); Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT); intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("*/*");
@@ -175,13 +202,66 @@ public class DetailActivity extends Activity implements SpeechController.Listene
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_FORMATTED && resultCode == RESULT_OK && data != null) {
+            pendingFocusMode = data.getStringExtra("focus_mode");
+            return;
+        }
         if (requestCode != REQUEST_REPLACE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        try {
-            DocumentImport imported = DocumentImport.read(getContentResolver(), data.getData());
-            repository.update(documentId, item.title, item.category, imported.content, imported.fileName,
-                    item.workspaceId, item.folderName, item.tags, imported.renderedHtml, imported.sourceFormat);
-            Toast.makeText(this, "Document replaced. Previous version retained.", Toast.LENGTH_LONG).show(); render();
-        } catch (Exception exception) { Toast.makeText(this, exception.getMessage(), Toast.LENGTH_LONG).show(); }
+        replaceDocument(data.getData());
+    }
+
+    private void replaceDocument(Uri uri) {
+        final String title = item.title;
+        final String category = item.category;
+        final long workspaceId = item.workspaceId;
+        final String folder = item.folderName;
+        final String tags = item.tags;
+        showImportProgress("Replacing document", "Reading, checking and formatting the selected file…");
+        importExecutor.execute(() -> {
+            try {
+                DocumentImport imported = DocumentImport.read(getContentResolver(), uri);
+                repository.update(documentId, title, category, imported.content, imported.fileName,
+                        workspaceId, folder, tags, imported.renderedHtml, imported.sourceFormat);
+                runOnUiThread(() -> {
+                    if (destroyed || isFinishing()) return;
+                    dismissImportProgress();
+                    Toast.makeText(this, "Document replaced safely. Previous version retained.",
+                            Toast.LENGTH_LONG).show();
+                    render();
+                });
+            } catch (Exception exception) {
+                String message = exception.getMessage() == null ? "The document could not be replaced." : exception.getMessage();
+                runOnUiThread(() -> {
+                    if (destroyed || isFinishing()) return;
+                    dismissImportProgress();
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void showImportProgress(String title, String message) {
+        dismissImportProgress();
+        importProgress = new ProgressDialog(this);
+        importProgress.setTitle(title);
+        importProgress.setMessage(message);
+        importProgress.setIndeterminate(true);
+        importProgress.setCancelable(false);
+        importProgress.show();
+    }
+
+    private void dismissImportProgress() {
+        if (importProgress != null) {
+            try { importProgress.dismiss(); } catch (Exception ignored) {}
+            importProgress = null;
+        }
+    }
+
+    private void focusPendingMode() {
+        if (pendingFocusMode == null) return;
+        String mode = pendingFocusMode;
+        pendingFocusMode = null;
+        focusMode(mode);
     }
 
     private void confirmDelete() {
@@ -204,7 +284,7 @@ public class DetailActivity extends Activity implements SpeechController.Listene
     }
 
     @Override protected void onResume() {
-        super.onResume(); if (repository != null && hasResumedOnce) render(); hasResumedOnce = true;
+        super.onResume(); if (repository != null && hasResumedOnce) render(); hasResumedOnce = true; focusPendingMode();
     }
     @Override protected void onPause() {
         if (scroll != null && scroll.getChildCount() > 0) {
@@ -214,5 +294,12 @@ public class DetailActivity extends Activity implements SpeechController.Listene
         }
         super.onPause();
     }
-    @Override protected void onDestroy() { if (speech != null) speech.shutdown(); super.onDestroy(); }
+    @Override protected void onDestroy() {
+        destroyed = true;
+        dismissImportProgress();
+        importExecutor.shutdownNow();
+        if (speech != null) speech.shutdown();
+        if (repository != null) repository.close();
+        super.onDestroy();
+    }
 }

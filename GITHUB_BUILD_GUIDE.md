@@ -26,7 +26,7 @@ The first upload to the `main` or `master` branch starts the APK build automatic
 
 1. Open the repository's **Actions** tab.
 2. Select **Build Android APK** in the left column.
-3. Open the newest workflow run and wait for the green check mark.
+3. Open the newest workflow run. It validates DOCX security/Word compatibility, runs Android lint, and then builds the APK. Wait for the green check mark.
 4. Scroll to the **Artifacts** section.
 5. Click **DotNetInterviewHub-debug-apk** to download it.
 6. Extract the downloaded artifact ZIP. It contains `app-debug.apk`.
@@ -44,7 +44,7 @@ The debug APK is suitable for personal installation and testing. It is not the s
 
 Every new commit to `main` or `master` automatically creates a fresh APK. You can also open **Actions → Build Android APK → Run workflow** to start a build manually.
 
-For the Version 2 update, upload and replace the complete project contents from the new ZIP. Keep the repository structure unchanged. When the workflow succeeds, install the new APK over version 1.1; do not uninstall the old app. The bundled personal signing key and higher version code allow Android to preserve and migrate the existing local database.
+For a Version 2 update, upload and replace the complete project contents from the new ZIP. Keep the repository structure unchanged. When the workflow succeeds, install the new APK over the currently installed version; do not uninstall the old app. The bundled personal signing key and higher version code allow Android to preserve the existing local database.
 
 Before any future uninstall or phone change, open **Manage → Export backup** in the app and keep the generated JSON file safely.
 

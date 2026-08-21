@@ -1,6 +1,7 @@
 package com.ashutosh.dotnetinterviewhub;
 
 import android.app.Activity;
+import android.app.ProgressDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
@@ -19,6 +20,8 @@ import android.widget.Toast;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_IMPORT = 1001;
@@ -32,6 +35,9 @@ public class MainActivity extends Activity {
     private CheckBox bookmarksOnly;
     private TextView summary;
     private boolean refreshingFilters;
+    private final ExecutorService importExecutor = Executors.newSingleThreadExecutor();
+    private ProgressDialog importProgress;
+    private volatile boolean destroyed;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -143,14 +149,51 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != REQUEST_IMPORT || resultCode != RESULT_OK || data == null) return;
         Uri uri = data.getData(); if (uri == null) return;
-        try {
-            DocumentImport imported = DocumentImport.read(getContentResolver(), uri);
-            long workspaceId = selectedWorkspace().id == 0 ? DocumentRepository.INTERVIEW_WORKSPACE_ID : selectedWorkspace().id;
-            long id = repository.insert(imported.suggestedTitle, "Imported", imported.content, imported.fileName,
-                    workspaceId, "", "", imported.renderedHtml, imported.sourceFormat);
-            Toast.makeText(this, "Document imported. Add its workspace, folder and tags.", Toast.LENGTH_LONG).show();
-            openEditor(id);
-        } catch (Exception exception) { Toast.makeText(this, exception.getMessage(), Toast.LENGTH_LONG).show(); }
+        importDocument(uri);
+    }
+
+    private void importDocument(Uri uri) {
+        long selectedId = selectedWorkspace().id;
+        long workspaceId = selectedId == 0 ? DocumentRepository.INTERVIEW_WORKSPACE_ID : selectedId;
+        showImportProgress("Importing document", "Reading, checking and formatting the selected file…");
+        importExecutor.execute(() -> {
+            try {
+                DocumentImport imported = DocumentImport.read(getContentResolver(), uri);
+                long id = repository.insert(imported.suggestedTitle, "Imported", imported.content,
+                        imported.fileName, workspaceId, "", "", imported.renderedHtml, imported.sourceFormat);
+                runOnUiThread(() -> {
+                    if (destroyed || isFinishing()) return;
+                    dismissImportProgress();
+                    Toast.makeText(this, "Document imported safely. Add its workspace, folder and tags.",
+                            Toast.LENGTH_LONG).show();
+                    openEditor(id);
+                });
+            } catch (Exception exception) {
+                String message = exception.getMessage() == null ? "The document could not be imported." : exception.getMessage();
+                runOnUiThread(() -> {
+                    if (destroyed || isFinishing()) return;
+                    dismissImportProgress();
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void showImportProgress(String title, String message) {
+        dismissImportProgress();
+        importProgress = new ProgressDialog(this);
+        importProgress.setTitle(title);
+        importProgress.setMessage(message);
+        importProgress.setIndeterminate(true);
+        importProgress.setCancelable(false);
+        importProgress.show();
+    }
+
+    private void dismissImportProgress() {
+        if (importProgress != null) {
+            try { importProgress.dismiss(); } catch (Exception ignored) {}
+            importProgress = null;
+        }
     }
 
     private void openEditor(long id) {
@@ -194,5 +237,13 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume(); if (repository != null && workspaceSpinner != null) refreshWorkspaces();
+    }
+
+    @Override protected void onDestroy() {
+        destroyed = true;
+        dismissImportProgress();
+        importExecutor.shutdownNow();
+        if (repository != null) repository.close();
+        super.onDestroy();
     }
 }

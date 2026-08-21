@@ -5,15 +5,11 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-
-import javax.xml.parsers.DocumentBuilderFactory;
 
 public final class DocxTextExtractor {
     private DocxTextExtractor() {}
@@ -22,23 +18,20 @@ public final class DocxTextExtractor {
         byte[] xml = null;
         try (ZipInputStream zip = new ZipInputStream(source)) {
             ZipEntry entry;
+            int entries = 0;
             while ((entry = zip.getNextEntry()) != null) {
+                if (++entries > DocxSecurity.MAX_ZIP_ENTRIES)
+                    throw new IllegalArgumentException("The DOCX contains too many internal files.");
                 if ("word/document.xml".equals(entry.getName())) {
-                    xml = readEntry(zip);
+                    xml = DocxSecurity.readLimited(zip, DocxSecurity.MAX_XML_ENTRY_BYTES,
+                            "The DOCX document content is too large.");
                     break;
                 }
             }
         }
         if (xml == null) throw new IllegalArgumentException("The selected file is not a readable DOCX document.");
 
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(false);
-        try {
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        } catch (Exception ignored) {
-            // Some Android XML implementations do not expose this optional feature.
-        }
-        Document document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml));
+        Document document = DocxSecurity.parseXml(xml);
         Node body = firstBySuffix(document, "body");
         if (body == null) return "";
 
@@ -122,19 +115,9 @@ public final class DocxTextExtractor {
         return colon >= 0 ? name.substring(colon + 1) : name;
     }
 
-    private static byte[] readEntry(InputStream input) throws Exception {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
-        int read;
-        while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
-        return output.toByteArray();
-    }
-
     public static String readText(InputStream source) throws Exception {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        byte[] buffer = new byte[8192];
-        int read;
-        while ((read = source.read(buffer)) != -1) output.write(buffer, 0, read);
-        return output.toString(StandardCharsets.UTF_8.name()).trim();
+        byte[] bytes = DocxSecurity.readLimited(source, DocxSecurity.MAX_INPUT_BYTES,
+                "The selected text document is larger than 20 MB.");
+        return new String(bytes, StandardCharsets.UTF_8).trim();
     }
 }
