@@ -147,7 +147,7 @@ public class MainActivity extends Activity {
             DocumentImport imported = DocumentImport.read(getContentResolver(), uri);
             long workspaceId = selectedWorkspace().id == 0 ? DocumentRepository.INTERVIEW_WORKSPACE_ID : selectedWorkspace().id;
             long id = repository.insert(imported.suggestedTitle, "Imported", imported.content, imported.fileName,
-                    workspaceId, "", "");
+                    workspaceId, "", "", imported.renderedHtml, imported.sourceFormat);
             Toast.makeText(this, "Document imported. Add its workspace, folder and tags.", Toast.LENGTH_LONG).show();
             openEditor(id);
         } catch (Exception exception) { Toast.makeText(this, exception.getMessage(), Toast.LENGTH_LONG).show(); }

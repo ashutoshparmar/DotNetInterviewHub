@@ -23,7 +23,7 @@ import java.util.Set;
 /** Central data gateway for the local-first knowledge library. */
 public class DocumentRepository extends SQLiteOpenHelper {
     private static final String DATABASE_NAME = "interview_hub.db";
-    private static final int DATABASE_VERSION = 2;
+    private static final int DATABASE_VERSION = 3;
     private static final String TABLE = "documents";
     public static final long INTERVIEW_WORKSPACE_ID = 1;
     public static final long CHANGEGUARD_WORKSPACE_ID = 2;
@@ -50,6 +50,8 @@ public class DocumentRepository extends SQLiteOpenHelper {
                 "category TEXT NOT NULL," +
                 "content TEXT NOT NULL," +
                 "source_name TEXT," +
+                "rendered_html TEXT NOT NULL DEFAULT ''," +
+                "source_format TEXT NOT NULL DEFAULT 'text'," +
                 "updated_at INTEGER NOT NULL," +
                 "is_seeded INTEGER NOT NULL DEFAULT 0," +
                 "bookmarked INTEGER NOT NULL DEFAULT 0," +
@@ -76,6 +78,13 @@ public class DocumentRepository extends SQLiteOpenHelper {
             createVersionTable(db);
             createSearchIndex(db);
             db.execSQL("INSERT INTO document_search(document_id,title,content,tags) SELECT id,title,content,tags FROM documents");
+        }
+        if (oldVersion < 3) {
+            addColumnIfMissing(db, TABLE, "rendered_html", "TEXT NOT NULL DEFAULT ''");
+            addColumnIfMissing(db, TABLE, "source_format", "TEXT NOT NULL DEFAULT 'text'");
+            createVersionTable(db);
+            addColumnIfMissing(db, "document_versions", "rendered_html", "TEXT NOT NULL DEFAULT ''");
+            addColumnIfMissing(db, "document_versions", "source_format", "TEXT NOT NULL DEFAULT 'text'");
         }
     }
 
@@ -104,12 +113,23 @@ public class DocumentRepository extends SQLiteOpenHelper {
                 "category TEXT NOT NULL," +
                 "content TEXT NOT NULL," +
                 "source_name TEXT," +
+                "rendered_html TEXT NOT NULL DEFAULT ''," +
+                "source_format TEXT NOT NULL DEFAULT 'text'," +
                 "workspace_id INTEGER NOT NULL," +
                 "folder_name TEXT NOT NULL DEFAULT ''," +
                 "tags TEXT NOT NULL DEFAULT ''," +
                 "saved_at INTEGER NOT NULL," +
                 "FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE)");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_versions_document ON document_versions(document_id,saved_at DESC)");
+    }
+
+    private static void addColumnIfMissing(SQLiteDatabase db, String table, String column, String definition) {
+        try (Cursor cursor = db.rawQuery("PRAGMA table_info(" + table + ")", null)) {
+            while (cursor.moveToNext()) {
+                if (column.equals(cursor.getString(cursor.getColumnIndexOrThrow("name")))) return;
+            }
+        }
+        db.execSQL("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
     }
 
     private void createSearchIndex(SQLiteDatabase db) {
@@ -204,7 +224,14 @@ public class DocumentRepository extends SQLiteOpenHelper {
 
     public long insert(String title, String category, String content, String sourceName,
                        long workspaceId, String folderName, String tags) {
-        ContentValues values = values(title, category, content, sourceName, workspaceId, folderName, tags);
+        return insert(title, category, content, sourceName, workspaceId, folderName, tags, "", "text");
+    }
+
+    public long insert(String title, String category, String content, String sourceName,
+                       long workspaceId, String folderName, String tags,
+                       String renderedHtml, String sourceFormat) {
+        ContentValues values = values(title, category, content, sourceName, workspaceId, folderName, tags,
+                renderedHtml, sourceFormat);
         values.put("display_order", 999); values.put("is_seeded", 0); values.put("bookmarked", 0);
         return getWritableDatabase().insertOrThrow(TABLE, null, values);
     }
@@ -217,19 +244,26 @@ public class DocumentRepository extends SQLiteOpenHelper {
 
     public void update(long id, String title, String category, String content, String sourceName,
                        long workspaceId, String folderName, String tags) {
+        update(id, title, category, content, sourceName, workspaceId, folderName, tags, "", "text");
+    }
+
+    public void update(long id, String title, String category, String content, String sourceName,
+                       long workspaceId, String folderName, String tags,
+                       String renderedHtml, String sourceFormat) {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
             saveCurrentVersion(db, id);
-            db.update(TABLE, values(title, category, content, sourceName, workspaceId, folderName, tags),
+            db.update(TABLE, values(title, category, content, sourceName, workspaceId, folderName, tags,
+                            renderedHtml, sourceFormat),
                     "id=?", new String[]{String.valueOf(id)});
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
     }
 
     private void saveCurrentVersion(SQLiteDatabase db, long documentId) {
-        db.execSQL("INSERT INTO document_versions(document_id,title,category,content,source_name,workspace_id,folder_name,tags,saved_at) " +
-                        "SELECT id,title,category,content,source_name,workspace_id,folder_name,tags,? FROM documents WHERE id=?",
+        db.execSQL("INSERT INTO document_versions(document_id,title,category,content,source_name,rendered_html,source_format,workspace_id,folder_name,tags,saved_at) " +
+                        "SELECT id,title,category,content,source_name,rendered_html,source_format,workspace_id,folder_name,tags,? FROM documents WHERE id=?",
                 new Object[]{System.currentTimeMillis(), documentId});
     }
 
@@ -254,7 +288,8 @@ public class DocumentRepository extends SQLiteOpenHelper {
             saveCurrentVersion(db, documentId);
             ContentValues values = new ContentValues();
             copy(cursor, values, "title"); copy(cursor, values, "category"); copy(cursor, values, "content");
-            copy(cursor, values, "source_name"); copy(cursor, values, "workspace_id");
+            copy(cursor, values, "source_name"); copy(cursor, values, "rendered_html");
+            copy(cursor, values, "source_format"); copy(cursor, values, "workspace_id");
             copy(cursor, values, "folder_name"); copy(cursor, values, "tags");
             values.put("updated_at", System.currentTimeMillis());
             db.update(TABLE, values, "id=?", new String[]{String.valueOf(documentId)});
@@ -338,7 +373,7 @@ public class DocumentRepository extends SQLiteOpenHelper {
 
     public void writeBackup(OutputStream output) throws Exception {
         JSONObject root = new JSONObject(); root.put("format", "dotnet-interview-hub-backup");
-        root.put("version", 2); root.put("createdAt", System.currentTimeMillis());
+        root.put("version", 3); root.put("createdAt", System.currentTimeMillis());
         root.put("workspaces", tableAsJson("SELECT * FROM workspaces ORDER BY id"));
         root.put("documents", tableAsJson("SELECT * FROM documents ORDER BY id"));
         root.put("versions", tableAsJson("SELECT * FROM document_versions ORDER BY id"));
@@ -393,10 +428,13 @@ public class DocumentRepository extends SQLiteOpenHelper {
     }
 
     private ContentValues values(String title, String category, String content, String sourceName,
-                                 long workspaceId, String folderName, String tags) {
+                                 long workspaceId, String folderName, String tags,
+                                 String renderedHtml, String sourceFormat) {
         ContentValues values = new ContentValues(); values.put("title", title.trim());
         values.put("category", category.trim().isEmpty() ? "Imported" : category.trim());
         values.put("content", content.trim()); values.put("source_name", sourceName == null ? "" : sourceName);
+        values.put("rendered_html", renderedHtml == null ? "" : renderedHtml.trim());
+        values.put("source_format", sourceFormat == null || sourceFormat.trim().isEmpty() ? "text" : sourceFormat.trim());
         values.put("workspace_id", workspaceId <= 0 ? INTERVIEW_WORKSPACE_ID : workspaceId);
         values.put("folder_name", folderName == null ? "" : folderName.trim()); values.put("tags", normalizeTags(tags));
         values.put("updated_at", System.currentTimeMillis()); return values;
@@ -414,6 +452,8 @@ public class DocumentRepository extends SQLiteOpenHelper {
         item.tags = cursor.getString(cursor.getColumnIndexOrThrow("tags"));
         item.lastOpenedAt = cursor.getLong(cursor.getColumnIndexOrThrow("last_opened_at"));
         item.readingProgress = cursor.getInt(cursor.getColumnIndexOrThrow("reading_progress"));
+        item.renderedHtml = cursor.getString(cursor.getColumnIndexOrThrow("rendered_html"));
+        item.sourceFormat = cursor.getString(cursor.getColumnIndexOrThrow("source_format"));
         return item;
     }
 

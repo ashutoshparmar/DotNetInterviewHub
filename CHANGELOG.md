@@ -33,3 +33,10 @@
 
 - Included all 29 offline interview documents.
 - Added search, categories, bookmarks, document import, replacement and editing.
+# Version 2.1.0
+
+- Added an offline formatted DOCX view using Android WebView.
+- Preserved DOCX headings, run emphasis, colours, hyperlinks, shaded callouts/code blocks, and table structure.
+- Kept a separate plain-text representation for search, editing, and text-to-speech.
+- Added database schema version 3 and version-history support for rich previews.
+- Preserved the rich preview when only metadata changes; editing document text intentionally clears it until the DOCX is replaced.

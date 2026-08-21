@@ -13,6 +13,7 @@ An offline-first Android application for Ashutosh Parmar's Senior .NET interview
 - Reading progress and recently-opened sorting.
 - Complete JSON backup and restore for documents, workspaces, bookmarks, progress, and history.
 - Readable document view with heading formatting and selectable text.
+- Offline formatted DOCX preview preserving headings, colours, emphasis, shaded blocks, hyperlinks, and table structure.
 - Built-in read-aloud controls using the phone's English text-to-speech voice.
 - Pause/resume, restart, stop, adjustable speed, and automatic long-document sectioning.
 - Bookmarking for quick revision.
@@ -69,10 +70,12 @@ The seeded documents are copied into the local database only during the first in
 
 ## Supported import formats
 
-- DOCX: text, headings, basic list markers, and table-cell text are extracted.
+- DOCX: searchable/read-aloud text is extracted, and a separate offline formatted preview preserves the document's main visual structure.
 - TXT and Markdown: UTF-8 text is imported directly.
 - Legacy `.doc` and PDF are intentionally not accepted because reliable offline text extraction would require additional conversion libraries.
 
+After importing or replacing a DOCX, open the document and tap **Open formatted DOCX view**. The normal text view remains available for editing, search, and read-aloud.
+
 ## Architecture
 
-The app remains dependency-free and inexpensive to build. SQL access is centralized in `DocumentRepository`, speech state is isolated in `SpeechController`, file parsing is isolated in `DocumentImport`, and schema version 2 uses an additive migration. This keeps the GitHub build simple while providing a safe path for future modules such as notes/highlights, quizzes, PDF import, or optional cloud synchronization.
+The app remains dependency-free and inexpensive to build. SQL access is centralized in `DocumentRepository`, speech state is isolated in `SpeechController`, and DOCX parsing is isolated in `DocumentImport`, `DocxTextExtractor`, and `DocxHtmlExtractor`. Schema version 3 adds format-preserving HTML without changing searchable text. This keeps the GitHub build simple while providing a safe path for future modules such as notes/highlights, quizzes, PDF import, or optional cloud synchronization.

@@ -73,6 +73,14 @@ public class DetailActivity extends Activity implements SpeechController.Listene
         content.addView(metadata, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content.addView(buildAudioPanel());
+        if (item.renderedHtml != null && !item.renderedHtml.isEmpty()) {
+            Button formatted = Ui.button(this, "▣ Open formatted DOCX view", true);
+            formatted.setOnClickListener(v -> openFormattedDocument());
+            LinearLayout.LayoutParams formattedParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52));
+            formattedParams.setMargins(0, Ui.dp(this, 12), 0, 0);
+            content.addView(formatted, formattedParams);
+        }
         TextView body = new TextView(this); body.setText(ContentFormatter.format(item.content)); body.setTextColor(Ui.INK);
         body.setTextSize(16); body.setLineSpacing(Ui.dp(this, 4), 1.12f); body.setTextIsSelectable(true);
         body.setPadding(0, Ui.dp(this, 18), 0, Ui.dp(this, 12)); content.addView(body);
@@ -155,6 +163,10 @@ public class DetailActivity extends Activity implements SpeechController.Listene
     private void openHistory() {
         speech.stop(true); Intent intent = new Intent(this, VersionHistoryActivity.class); intent.putExtra("document_id", documentId); startActivity(intent);
     }
+    private void openFormattedDocument() {
+        speech.stop(true); Intent intent = new Intent(this, FormattedDocumentActivity.class);
+        intent.putExtra("document_id", documentId); startActivity(intent);
+    }
     private void chooseReplacement() {
         speech.stop(true); Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT); intent.addCategory(Intent.CATEGORY_OPENABLE); intent.setType("*/*");
         intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/vnd.openxmlformats-officedocument.wordprocessingml.document","text/plain","text/markdown"});
@@ -167,7 +179,7 @@ public class DetailActivity extends Activity implements SpeechController.Listene
         try {
             DocumentImport imported = DocumentImport.read(getContentResolver(), data.getData());
             repository.update(documentId, item.title, item.category, imported.content, imported.fileName,
-                    item.workspaceId, item.folderName, item.tags);
+                    item.workspaceId, item.folderName, item.tags, imported.renderedHtml, imported.sourceFormat);
             Toast.makeText(this, "Document replaced. Previous version retained.", Toast.LENGTH_LONG).show(); render();
         } catch (Exception exception) { Toast.makeText(this, exception.getMessage(), Toast.LENGTH_LONG).show(); }
     }

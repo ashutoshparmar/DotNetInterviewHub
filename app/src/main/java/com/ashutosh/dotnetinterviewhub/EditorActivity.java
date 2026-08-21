@@ -64,7 +64,7 @@ public class EditorActivity extends Activity {
         form.addView(tagsField);
         content = input("Interview content", item.content, true);
         LinearLayout contentField = field("Content", content);
-        contentField.addView(help("Formatting: start a heading with #, ## or ###. Imported DOCX headings are converted automatically."));
+        contentField.addView(help("Formatting: start a heading with #, ## or ###. Changing imported DOCX text removes its formatted preview; replace the DOCX to regenerate it."));
         form.addView(contentField);
 
         LinearLayout actions = new LinearLayout(this);
@@ -136,9 +136,12 @@ public class EditorActivity extends Activity {
             return;
         }
         WorkspaceItem selectedWorkspace = (WorkspaceItem) workspace.getSelectedItem();
+        boolean contentChanged = !newContent.equals(item.content);
         repository.update(documentId, newTitle,
                 newCategory.isEmpty() ? "Imported" : newCategory,
-                newContent, item.sourceName, selectedWorkspace.id, newFolder, newTags);
+                newContent, item.sourceName, selectedWorkspace.id, newFolder, newTags,
+                contentChanged ? "" : item.renderedHtml,
+                contentChanged ? "text" : item.sourceFormat);
         Toast.makeText(this, "Changes saved. Previous version retained.", Toast.LENGTH_SHORT).show();
         finish();
     }

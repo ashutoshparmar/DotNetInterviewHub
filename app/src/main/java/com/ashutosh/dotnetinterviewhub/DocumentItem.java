@@ -6,6 +6,8 @@ public class DocumentItem {
     public String category;
     public String content;
     public String sourceName;
+    public String renderedHtml;
+    public String sourceFormat;
     public long updatedAt;
     public boolean seeded;
     public boolean bookmarked;
